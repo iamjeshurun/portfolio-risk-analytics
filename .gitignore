@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local SQLite databases and journal files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Secrets and local configuration
+.env
+.claude/
+
+# Logs and OS files
+*.log
+.DS_Store

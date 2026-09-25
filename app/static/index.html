@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio Risk Analytics</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Portfolio Risk Analytics</h1>
+    <p class="subtitle">Buy-and-hold performance and risk for a long-only US equity portfolio.</p>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel" aria-labelledby="inputs-title">
+        <h2 id="inputs-title">Portfolio</h2>
+        <form id="portfolio-form" novalidate>
+          <div class="holdings-head" aria-hidden="true">
+            <span>Symbol</span><span>Initial weight (%)</span><span></span>
+          </div>
+          <div id="holdings" class="holdings"></div>
+          <p class="field-error" data-error-for="holdings"></p>
+          <div class="holdings-actions">
+            <button type="button" id="add-holding" class="button secondary">Add holding</button>
+            <p class="weight-total">Total: <strong id="weight-total">0.00%</strong></p>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Start date</span>
+              <input type="date" id="start-date" name="start_date" required>
+              <span class="field-error" data-error-for="start_date"></span>
+            </label>
+            <label class="field">
+              <span>End date</span>
+              <input type="date" id="end-date" name="end_date" required>
+              <span class="field-error" data-error-for="end_date"></span>
+            </label>
+            <label class="field">
+              <span>Annual risk-free rate (%)</span>
+              <input type="number" id="risk-free-rate" name="risk_free_rate" min="0" max="20" step="0.01" inputmode="decimal" required>
+              <span class="field-error" data-error-for="risk_free_rate"></span>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="analyze-button" class="button primary">Analyze</button>
+            <button type="button" id="example-button" class="button secondary">Example portfolio</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="saved-title">
+        <h2 id="saved-title">Saved portfolios</h2>
+        <form id="save-form" class="save-form" novalidate>
+          <label class="field">
+            <span>Name</span>
+            <input type="text" id="portfolio-name" maxlength="100" placeholder="e.g. Big Tech" required>
+            <span class="field-error" data-error-for="name"></span>
+          </label>
+          <button type="submit" id="save-button" class="button secondary">Save current inputs</button>
+        </form>
+        <p id="saved-status" class="status" role="status"></p>
+        <ul id="saved-list" class="saved-list"></ul>
+      </section>
+    </aside>
+
+    <section class="results" aria-live="polite">
+      <div id="request-error" class="alert error" hidden></div>
+
+      <div id="empty-state" class="panel empty-state">
+        <h2 id="empty-title">No analysis yet</h2>
+        <p id="empty-message">Enter holdings and a date range, then choose <strong>Analyze</strong>. Use <strong>Example portfolio</strong> to fill in a working set of inputs.</p>
+      </div>
+
+      <div id="loading-state" class="panel empty-state" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Retrieving prices and calculating metrics…</p>
+      </div>
+
+      <div id="results" hidden>
+        <p id="period" class="period"></p>
+        <ul id="warnings" class="alert warning" hidden></ul>
+
+        <div class="cards">
+          <div class="card"><h3>Total return</h3><p class="value" id="m-total_return"></p><p class="note" id="n-total_return"></p></div>
+          <div class="card"><h3>Annualized return</h3><p class="value" id="m-annualized_return"></p><p class="note" id="n-annualized_return"></p></div>
+          <div class="card"><h3>Annualized volatility</h3><p class="value" id="m-annualized_volatility"></p><p class="note" id="n-annualized_volatility"></p></div>
+          <div class="card"><h3>Maximum drawdown</h3><p class="value" id="m-max_drawdown"></p><p class="note" id="n-max_drawdown"></p></div>
+          <div class="card"><h3>Sharpe ratio</h3><p class="value" id="m-sharpe_ratio"></p><p class="note" id="n-sharpe_ratio"></p></div>
+        </div>
+
+        <section class="panel">
+          <h2>Growth of 1.0</h2>
+          <p class="chart-caption">Portfolio and each asset, normalized to 1.0 on the first shared date.</p>
+          <div class="chart-box"><canvas id="performance-chart" aria-label="Normalized portfolio and asset performance"></canvas></div>
+        </section>
+
+        <section class="panel">
+          <h2>Portfolio drawdown</h2>
+          <p class="chart-caption">Decline from the running peak of portfolio value.</p>
+          <div class="chart-box short"><canvas id="drawdown-chart" aria-label="Portfolio drawdown"></canvas></div>
+        </section>
+
+        <section class="panel">
+          <h2>Correlation of daily returns</h2>
+          <div class="heatmap-scroll"><table id="correlation" class="heatmap"></table></div>
+          <div class="heatmap-legend" aria-hidden="true">
+            <span>−1</span><span class="heatmap-scale"></span><span>+1</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel method-note">
+        <h2>How it is calculated</h2>
+        <p>
+          Weights are the <strong>initial</strong> allocation of a buy-and-hold portfolio: nothing is rebalanced, so
+          holdings drift with prices. Prices are daily <strong>adjusted closes</strong> (splits and dividends included).
+          Only dates where every holding has a price are used; gaps inside that window are reported rather than filled.
+          Return and volatility are annualized with <strong>252 trading days</strong> per year, and Sharpe uses the
+          risk-free rate you enter. Results describe the past sample only.
+        </p>
+      </section>
+    </section>
+  </main>
+
+  <template id="holding-row">
+    <div class="holding-row">
+      <input type="text" class="symbol" aria-label="Symbol" placeholder="Ticker" maxlength="10" autocapitalize="characters" spellcheck="false">
+      <input type="number" class="weight" aria-label="Initial weight (%)" placeholder="%" min="0" max="100" step="0.01" inputmode="decimal">
+      <button type="button" class="button icon remove" aria-label="Remove holding">×</button>
+      <span class="field-error row-error"></span>
+    </div>
+  </template>
+</body>
+</html>
