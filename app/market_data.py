@@ -11,13 +11,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import CACHE_TTL_HOURS, PROVIDER_TIMEOUT_SECONDS
-from app.database import Price
+from app.database import Price, PriceFetch
 from app.errors import AppError
 
 logger = logging.getLogger(__name__)
 
 PRICE_SOURCE = "yfinance"
-BOUNDARY_TOLERANCE_DAYS = 5
+BOUNDARY_TOLERANCE_DAYS = 5  # weekend/holiday slack for analysis-window warnings
 
 PriceFetcher = Callable[[list[str], date, date], pd.DataFrame]
 
@@ -109,22 +109,34 @@ def read_cached_prices(db: Session, symbol: str, start: date, end: date) -> list
     return list(db.scalars(query))
 
 
-def cache_is_sufficient(rows: list[Price], start: date, end: date, now: datetime) -> bool:
-    if not rows:
-        return False
-    tolerance = timedelta(days=BOUNDARY_TOLERANCE_DAYS)
-    oldest_allowed = now - timedelta(hours=CACHE_TTL_HOURS)
-    return (
-        rows[0].date <= start + tolerance
-        and rows[-1].date >= end - tolerance
-        and all(row.fetched_at >= oldest_allowed for row in rows)
+def cache_covers(db: Session, symbol: str, start: date, end: date, now: datetime) -> bool:
+    """True when a fresh fetch spanning the whole range is recorded for the symbol.
+
+    Coverage is tracked separately from the price rows, so a symbol whose history
+    begins after `start` (or that skips holidays) is still served from cache.
+    """
+    query = select(PriceFetch.id).where(
+        PriceFetch.symbol == symbol,
+        PriceFetch.source == PRICE_SOURCE,
+        PriceFetch.start_date <= start,
+        PriceFetch.end_date >= end,
+        PriceFetch.fetched_at >= now - timedelta(hours=CACHE_TTL_HOURS),
     )
+    return db.scalars(query.limit(1)).first() is not None
 
 
-def replace_cached_prices(db: Session, symbol: str, prices: pd.Series, fetched_at: datetime) -> None:
-    """Atomically replace every cached row for the symbol with the freshly fetched observations."""
+def replace_cached_prices(
+    db: Session, symbol: str, prices: pd.Series, start: date, end: date, fetched_at: datetime
+) -> None:
+    """Atomically replace the symbol's whole cached history with one fresh fetch.
+
+    Adjusted closes change retroactively after dividends and splits, so rows from
+    separate fetches are never mixed.
+    """
     try:
         db.execute(delete(Price).where(Price.symbol == symbol, Price.source == PRICE_SOURCE))
+        db.execute(delete(PriceFetch).where(PriceFetch.symbol == symbol, PriceFetch.source == PRICE_SOURCE))
+        db.add(PriceFetch(symbol=symbol, source=PRICE_SOURCE, start_date=start, end_date=end, fetched_at=fetched_at))
         db.add_all(
             Price(
                 symbol=symbol,
@@ -149,15 +161,18 @@ def get_prices(db: Session, symbols: list[str], start: date, end: date, fetch: P
     now = datetime.now(UTC).replace(tzinfo=None)
     series: dict[str, pd.Series] = {}
     stale: list[str] = []
+    missing: list[str] = []
     for symbol in symbols:
-        rows = read_cached_prices(db, symbol, start, end)
-        if cache_is_sufficient(rows, start, end, now):
+        if cache_covers(db, symbol, start, end, now):
+            rows = read_cached_prices(db, symbol, start, end)
+            if not rows:  # fetched recently and the provider had nothing in this range
+                missing.append(symbol)
+                continue
             index = pd.DatetimeIndex([row.date for row in rows], name="date")
             series[symbol] = pd.Series([row.adjusted_close for row in rows], index=index, dtype=float)
         else:
             stale.append(symbol)
 
-    missing: list[str] = []
     if stale:
         fresh = fetch(stale, start, end).reindex(columns=stale)
         fresh.index = pd.DatetimeIndex(fresh.index)
@@ -173,7 +188,7 @@ def get_prices(db: Session, symbols: list[str], start: date, end: date, fetch: P
             if observed.empty:
                 missing.append(symbol)
                 continue
-            replace_cached_prices(db, symbol, observed, now)
+            replace_cached_prices(db, symbol, observed, start, end, now)
             series[symbol] = observed
 
     if missing:

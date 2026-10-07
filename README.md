@@ -21,10 +21,11 @@ One process and one SQLite file. There is no separate frontend build.
 Browser (app/static: HTML + CSS + vanilla JS, Chart.js from a CDN)
    │  JSON over HTTP
 FastAPI app (app/main.py, app/routes.py)
+   ├── analysis.py     data-quality rules and response assembly for /analyze
    ├── schemas.py      Pydantic request/response models and input validation
    ├── market_data.py  yfinance fetch_prices() + SQLite price cache
    ├── analytics.py    pure pandas/NumPy financial calculations
-   ├── database.py     SQLAlchemy engine, session, and the prices/portfolios tables
+   ├── database.py     SQLAlchemy engine, session, and the prices/price_fetches/portfolios tables
    ├── errors.py       AppError and the three error handlers
    └── config.py       environment variables with defaults
 SQLite (portfolio.db)
@@ -277,21 +278,20 @@ all.
 ## Caching
 
 Prices are stored in the `prices` table with `symbol`, `date`, `adjusted_close`, `source` and `fetched_at`,
-unique on `(symbol, date, source)`. For each requested symbol, the cached rows in the range are used only if
-all of these hold:
+unique on `(symbol, date, source)`. The `price_fetches` table records the date range of each symbol's cached
+fetch. For each requested symbol, the cached rows in the range are used only if that symbol's recorded fetch
+covers the whole requested range and was made within `CACHE_TTL_HOURS` (default 24).
 
-- rows exist
-- the earliest row is no more than five calendar days after the requested start
-- the latest row is no more than five calendar days before the requested end
-- every row was fetched within `CACHE_TTL_HOURS` (default 24)
+Recording coverage separately means dates without rows (weekends, holidays, or days before a stock was listed)
+are known to be gaps rather than missing cache entries.
 
 Otherwise the symbol's **entire** requested range is fetched again:
 
 1. The fresh data is validated first. A zero, negative, or infinite observed price is a `PROVIDER_ERROR` and is
    never turned into a missing value.
 2. The fresh data is used for the current analysis.
-3. In one transaction, **all** cached rows for that symbol and source are deleted and the fresh range is
-   inserted.
+3. In one transaction, **all** cached rows for that symbol and source are deleted and the fresh range and its
+   coverage record are inserted.
 
 A failed fetch, invalid prices, or an empty result leaves the existing cache untouched and returns an error.
 The app never silently falls back to stale data. Stale symbols in one request are fetched in a single provider
@@ -302,11 +302,8 @@ Deliberate tradeoffs:
 - **Replacing the whole symbol history** throws away some reusable rows. In exchange, a series never mixes
   prices from separate fetches that may have been adjusted differently. Adjusted closes change retroactively
   after every dividend or split.
-- **The five-day boundary tolerance** is a heuristic for weekends and holidays, not proof that the cache is
-  complete. The data-quality rules above apply to cached and fresh data alike.
-- **Late-listing stocks may refetch on every request.** If the requested start is more than five days before a
-  stock's first available price, its cached rows can never satisfy the start boundary, so each request fetches
-  it again. This is accepted rather than adding coverage metadata.
+- **Only one range is cached per symbol.** Requesting a range outside the cached one refetches and replaces it.
+  The data-quality rules above apply to cached and fresh data alike.
 - There is no background refresh. A cached series older than the TTL is refreshed on the next request that
   needs it.
 
