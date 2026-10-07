@@ -17,7 +17,6 @@ __pycache__/
 
 # Secrets and local configuration
 .env
-.claude/
 
 # Logs and OS files
 *.log
