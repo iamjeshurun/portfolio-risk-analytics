@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analysis import analyze_prices
-from app.database import Portfolio, get_db
+from app.database import Portfolio, PriceFetch, get_db
 from app.errors import AppError, validation_error
 from app.market_data import PRICE_SOURCE, PriceFetcher, get_price_fetcher, get_prices
 from app.schemas import (
@@ -75,7 +75,13 @@ def analyze(
     weights = pd.Series({holding.symbol: holding.weight for holding in request.holdings}, dtype=float)
     weights = weights / weights.sum()
     prices = get_prices(db, symbols, request.start_date, request.end_date, fetch)
-    return analyze_prices(prices, weights, request.risk_free_rate, request.start_date, request.end_date)
+    result = analyze_prices(prices, weights, request.risk_free_rate, request.start_date, request.end_date)
+    fetched = db.scalars(
+        select(PriceFetch.fetched_at).where(PriceFetch.symbol.in_(symbols), PriceFetch.source == PRICE_SOURCE)
+    ).all()
+    if len(fetched) == len(symbols):
+        result.prices_fetched_at = min(fetched).replace(tzinfo=UTC)
+    return result
 
 
 def portfolio_out(portfolio: Portfolio) -> PortfolioOut:

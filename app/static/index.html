@@ -4,135 +4,198 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portfolio Risk Analytics</title>
-  <link rel="stylesheet" href="/static/styles.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <meta name="description" content="Historical growth, drawdown, volatility, Sharpe ratio and correlations for a buy-and-hold stock portfolio, from adjusted daily prices.">
+  <!-- Empty when the page is served by the API itself; the GitHub Pages build fills in the hosted API's URL. -->
+  <meta name="api-base" content="">
+  <meta name="theme-color" content="#060708">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@500;600;700;800&family=Funnel+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="static/styles.css">
+  <link rel="preload" href="static/example-analysis.json" as="fetch" crossorigin>
+  <script type="module" src="static/js/app.js"></script>
 </head>
 <body>
-  <header class="page-header">
-    <h1>Portfolio Risk Analytics</h1>
-    <p class="subtitle">Buy-and-hold performance and risk for a long-only US equity portfolio.</p>
+  <a class="skip-link" href="#workspace">Skip to the analysis</a>
+
+  <header class="topbar">
+    <span class="brand display">Portfolio Risk Analytics</span>
+    <p class="service" role="status" aria-live="polite"><span id="service-long">Checking the live analysis service</span><span id="service-short" aria-hidden="true">Checking</span></p>
+    <a class="topbar-link" href="https://github.com/iamjeshurun/portfolio-risk-analytics"><span class="wide-only">Source on </span>GitHub</a>
   </header>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <section class="panel" aria-labelledby="inputs-title">
-        <h2 id="inputs-title">Portfolio</h2>
-        <form id="portfolio-form" novalidate>
-          <div class="holdings-head" aria-hidden="true">
-            <span>Symbol</span><span>Initial weight (%)</span><span></span>
-          </div>
-          <div id="holdings" class="holdings"></div>
-          <p class="field-error" data-error-for="holdings"></p>
-          <div class="holdings-actions">
-            <button type="button" id="add-holding" class="button secondary">Add holding</button>
-            <p class="weight-total">Total: <strong id="weight-total">0.00%</strong></p>
-          </div>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy-wrap">
+      <div class="hero-copy">
+        <p class="hero-label" id="hero-label"><strong>Example portfolio.</strong> Loading the precomputed example.</p>
+        <h1 class="display" id="hero-title"><span class="l1" id="hero-line-1">&nbsp;</span><span class="l2" id="hero-line-2">&nbsp;</span></h1>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#holdings-title">Analyze your own portfolio</a>
+          <a class="btn btn-quiet" href="#workspace">See the full example analysis</a>
+          <span class="hero-disclaimer">Historical analysis only. Not investment advice.</span>
+        </div>
+      </div>
+      <aside class="readout" aria-label="Example readout">
+        <p class="readout-source" id="readout-source">Example data.</p>
+        <p class="readout-date num" id="readout-date">&nbsp;</p>
+        <p class="readout-value display num" id="readout-value">&nbsp;</p>
+        <p class="readout-fall num" id="readout-fall">&nbsp;</p>
+        <p class="readout-hint" id="readout-hint">&nbsp;</p>
+      </aside>
+    </div>
+    <div class="horizon" id="horizon"></div>
+  </section>
 
-          <div class="field-grid">
-            <label class="field">
-              <span>Start date</span>
-              <input type="date" id="start-date" name="start_date" required>
-              <span class="field-error" data-error-for="start_date"></span>
-            </label>
-            <label class="field">
-              <span>End date</span>
-              <input type="date" id="end-date" name="end_date" required>
-              <span class="field-error" data-error-for="end_date"></span>
-            </label>
-            <label class="field">
-              <span>Annual risk-free rate (%)</span>
-              <input type="number" id="risk-free-rate" name="risk_free_rate" min="0" max="20" step="0.01" inputmode="decimal" required>
+  <main id="workspace" class="workspace" tabindex="-1">
+    <div class="ws-head">
+      <div>
+        <h2 class="display" id="results-title">Example analysis</h2>
+        <div class="result-label" id="result-label" aria-live="polite"></div>
+      </div>
+      <p class="ws-disclaimer">Historical analysis only. Not investment advice.</p>
+    </div>
+
+    <div class="ws-grid">
+      <div class="side">
+        <section class="panel editor" aria-labelledby="holdings-title">
+          <h3 class="display" id="holdings-title" tabindex="-1">Holdings</h3>
+          <p class="muted small">Loaded with the example. Change anything, then run it live.</p>
+          <form id="portfolio-form" novalidate>
+            <div class="holdings-head" aria-hidden="true"><span>Symbol</span><span>Initial weight</span></div>
+            <div id="holdings"></div>
+            <p class="field-error" data-error-for="holdings"></p>
+            <div class="holdings-actions">
+              <button type="button" class="btn btn-quiet btn-small" id="add-holding">Add holding</button>
+              <p class="weight-total num" id="weight-total" role="status"></p>
+            </div>
+            <div class="field-row">
+              <label class="field">From
+                <input type="date" id="start-date" required>
+                <span class="field-error" data-error-for="start_date"></span>
+              </label>
+              <label class="field">To
+                <input type="date" id="end-date" required>
+                <span class="field-error" data-error-for="end_date"></span>
+              </label>
+            </div>
+            <label class="field">Risk-free rate, per year
+              <span class="suffix-input"><input type="number" id="risk-free-rate" min="0" max="20" step="0.01" inputmode="decimal" required><span aria-hidden="true">%</span></span>
               <span class="field-error" data-error-for="risk_free_rate"></span>
             </label>
-          </div>
+            <button type="submit" class="btn btn-primary btn-block" id="run-button" disabled>Run live analysis</button>
+            <p class="run-note small" id="run-note" role="status"></p>
+            <p class="run-wake" id="run-wake" aria-hidden="true" hidden><i></i></p>
+            <button type="button" class="link-button small" id="retry-service" hidden>Try reaching the service again</button>
+          </form>
+        </section>
 
-          <div class="form-actions">
-            <button type="submit" id="analyze-button" class="button primary">Analyze</button>
-            <button type="button" id="example-button" class="button secondary">Example portfolio</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel" aria-labelledby="saved-title">
-        <h2 id="saved-title">Saved portfolios</h2>
-        <form id="save-form" class="save-form" novalidate>
-          <label class="field">
-            <span>Name</span>
-            <input type="text" id="portfolio-name" maxlength="100" placeholder="e.g. Big Tech" required>
-            <span class="field-error" data-error-for="name"></span>
-          </label>
-          <button type="submit" id="save-button" class="button secondary">Save current inputs</button>
-        </form>
-        <p id="saved-status" class="status" role="status"></p>
-        <ul id="saved-list" class="saved-list"></ul>
-      </section>
-    </aside>
-
-    <section class="results" aria-live="polite">
-      <div id="request-error" class="alert error" hidden></div>
-
-      <div id="empty-state" class="panel empty-state">
-        <h2 id="empty-title">No analysis yet</h2>
-        <p id="empty-message">Enter holdings and a date range, then choose <strong>Analyze</strong>. Use <strong>Example portfolio</strong> to fill in a working set of inputs.</p>
+        <details class="panel saved" id="saved">
+          <summary class="display">Saved portfolios</summary>
+          <p class="muted small" id="saved-intro">Save the inputs above under a name to load them later. Results are not saved.</p>
+          <form id="save-form" class="save-form" novalidate>
+            <label class="field">Name
+              <input type="text" id="portfolio-name" maxlength="100" placeholder="For example, Big Tech" required>
+              <span class="field-error" data-error-for="name"></span>
+            </label>
+            <button type="submit" class="btn btn-quiet btn-small" id="save-button">Save current inputs</button>
+          </form>
+          <p class="small status" id="saved-status" role="status"></p>
+          <ul class="saved-list" id="saved-list"></ul>
+        </details>
       </div>
 
-      <div id="loading-state" class="panel empty-state" hidden>
-        <div class="spinner" aria-hidden="true"></div>
-        <p>Retrieving prices and calculating metrics…</p>
-      </div>
+      <div class="results" id="results" aria-labelledby="results-title">
+        <div class="alert error" id="request-error" role="alert" hidden></div>
+        <div class="alert notice" id="stale-note" hidden></div>
+        <ul class="alert warning" id="warnings" hidden></ul>
 
-      <div id="results" hidden>
-        <p id="period" class="period"></p>
-        <ul id="warnings" class="alert warning" hidden></ul>
+        <section class="panel metrics-panel" aria-label="Summary measures">
+          <dl class="metrics" id="metrics"></dl>
+        </section>
 
-        <div class="cards">
-          <div class="card"><h3>Total return</h3><p class="value" id="m-total_return"></p><p class="note" id="n-total_return"></p></div>
-          <div class="card"><h3>Annualized return</h3><p class="value" id="m-annualized_return"></p><p class="note" id="n-annualized_return"></p></div>
-          <div class="card"><h3>Annualized volatility</h3><p class="value" id="m-annualized_volatility"></p><p class="note" id="n-annualized_volatility"></p></div>
-          <div class="card"><h3>Maximum drawdown</h3><p class="value" id="m-max_drawdown"></p><p class="note" id="n-max_drawdown"></p></div>
-          <div class="card"><h3>Sharpe ratio</h3><p class="value" id="m-sharpe_ratio"></p><p class="note" id="n-sharpe_ratio"></p></div>
+        <section class="panel" aria-labelledby="growth-title">
+          <div class="panel-head">
+            <div>
+              <h3 class="display" id="growth-title">Growth of $1</h3>
+              <p class="muted small num" id="growth-summary"></p>
+            </div>
+            <div class="chips" role="group" aria-label="Date range" id="growth-ranges"></div>
+          </div>
+          <div class="legend" id="growth-legend" role="group" aria-label="Highlight a holding"></div>
+          <p class="hover-readout small num" id="growth-readout"></p>
+          <div class="chart-host growth" id="growth-chart"></div>
+          <p class="muted small">Each line starts at $1 on the first trading day shown. Holdings are drawn in grey; choose one above to pick it out.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="dd-title">
+          <div class="panel-head">
+            <div>
+              <h3 class="display" id="dd-title">Drawdown</h3>
+              <p class="muted small num" id="dd-summary"></p>
+            </div>
+          </div>
+          <p class="hover-readout small num" id="dd-readout"></p>
+          <div class="chart-host drawdown" id="dd-chart"></div>
+          <p class="muted small">How far the portfolio sat below its highest value so far, each day.</p>
+        </section>
+
+        <div class="two-up">
+          <section class="panel" aria-labelledby="vol-title">
+            <h3 class="display" id="vol-title">Volatility and Sharpe ratio</h3>
+            <p class="small" id="vol-summary"></p>
+            <div class="chart-host hist" id="vol-chart"></div>
+            <p class="muted small" id="vol-note"></p>
+          </section>
+          <section class="panel" aria-labelledby="corr-title">
+            <h3 class="display" id="corr-title">Correlation of daily returns</h3>
+            <p class="muted small">1.00 means two holdings moved in lockstep. Lower values diversify more.</p>
+            <div class="corr-scroll"><table class="corr num" id="correlation"></table></div>
+          </section>
         </div>
-
-        <section class="panel">
-          <h2>Growth of 1.0</h2>
-          <p class="chart-caption">Portfolio and each asset, normalized to 1.0 on the first shared date.</p>
-          <div class="chart-box"><canvas id="performance-chart" aria-label="Normalized portfolio and asset performance"></canvas></div>
-        </section>
-
-        <section class="panel">
-          <h2>Portfolio drawdown</h2>
-          <p class="chart-caption">Decline from the running peak of portfolio value.</p>
-          <div class="chart-box short"><canvas id="drawdown-chart" aria-label="Portfolio drawdown"></canvas></div>
-        </section>
-
-        <section class="panel">
-          <h2>Correlation of daily returns</h2>
-          <div class="heatmap-scroll"><table id="correlation" class="heatmap"></table></div>
-          <div class="heatmap-legend" aria-hidden="true">
-            <span>−1</span><span class="heatmap-scale"></span><span>+1</span>
-          </div>
-        </section>
       </div>
+    </div>
 
-      <section class="panel method-note">
-        <h2>How it is calculated</h2>
-        <p>
-          Weights are the <strong>initial</strong> allocation of a buy-and-hold portfolio: nothing is rebalanced, so
-          holdings drift with prices. Prices are daily <strong>adjusted closes</strong> (splits and dividends included).
-          Only dates where every holding has a price are used; gaps inside that window are reported rather than filled.
-          Return and volatility are annualized with <strong>252 trading days</strong> per year, and Sharpe uses the
-          risk-free rate you enter. Results describe the past sample only.
-        </p>
-      </section>
+    <section class="method" aria-labelledby="method-title">
+      <h2 class="display" id="method-title">How it works</h2>
+      <div class="method-grid">
+        <div>
+          <h3>The pipeline</h3>
+          <p>A FastAPI service downloads adjusted daily closes from Yahoo Finance with yfinance, caches them in SQLite for up to 24 hours with a record of each fetch, and computes every figure with pandas. This page only draws what the API returns.</p>
+          <p>The example was computed ahead of time by the same code, so the page is useful before the free-tier service wakes up.</p>
+        </div>
+        <div>
+          <h3>The rules</h3>
+          <ul>
+            <li>Buy and hold: weights are set on the first day and drift with prices. Nothing is rebalanced.</li>
+            <li>Adjusted closes, so splits and dividends are included. 252 trading days a year.</li>
+            <li>Only dates on which every holding traded are used. Gaps are reported, never filled.</li>
+            <li>Sharpe ratio uses the risk-free rate you enter, converted to a daily rate.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Limits</h3>
+          <ul>
+            <li>Yahoo Finance is an unofficial source. It can rate-limit or fail, and the page says so instead of guessing.</li>
+            <li>Every figure describes one historical window and moves with its start and end dates.</li>
+            <li>Nothing here predicts returns or recommends a holding.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="method-links"><a href="https://github.com/iamjeshurun/portfolio-risk-analytics">Read the code</a><a href="https://github.com/iamjeshurun/portfolio-risk-analytics#api">API reference</a></p>
     </section>
   </main>
 
+  <footer class="footer">
+    <p>Portfolio Risk Analytics. Prices from Yahoo Finance via yfinance. Historical analysis only, not investment advice.</p>
+  </footer>
+
   <template id="holding-row">
     <div class="holding-row">
-      <input type="text" class="symbol" aria-label="Symbol" placeholder="Ticker" maxlength="10" autocapitalize="characters" spellcheck="false">
-      <input type="number" class="weight" aria-label="Initial weight (%)" placeholder="%" min="0" max="100" step="0.01" inputmode="decimal">
-      <button type="button" class="button icon remove" aria-label="Remove holding">×</button>
+      <input type="text" class="symbol" placeholder="Ticker" maxlength="10" autocapitalize="characters" autocomplete="off" spellcheck="false">
+      <span class="suffix-input"><input type="number" class="weight" placeholder="0" min="0" max="100" step="0.01" inputmode="decimal"><span aria-hidden="true">%</span></span>
+      <button type="button" class="icon-button remove">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+      </button>
       <span class="field-error row-error"></span>
     </div>
   </template>

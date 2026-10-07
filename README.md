@@ -10,15 +10,21 @@ a date range and an annual risk-free rate. The app retrieves daily adjusted clos
 - Sharpe ratio
 - asset return correlations
 
-The dashboard shows these metrics with performance and drawdown charts and a correlation heatmap. You can save,
+The dashboard opens on a precomputed, clearly labelled example (40% AAPL, 35% MSFT, 25% GOOG, 2023 to 2025),
+so it is useful before the free-tier API wakes up. Edit the holdings and run a live analysis once the service is
+ready; live results replace the example and are labelled with when their prices were fetched. You can also save,
 list, load and delete portfolio configurations.
+
+**Live demo:** <https://iamjeshurun.github.io/portfolio-risk-analytics/> (static page on GitHub Pages; the API runs
+on Render's free tier and can take up to a minute to wake).
 
 ## Architecture
 
-One process and one SQLite file. There is no separate frontend build.
+One process and one SQLite file. There is no separate frontend build: the page is plain HTML, CSS and JavaScript
+modules with hand-written SVG charts and no runtime dependencies.
 
 ```
-Browser (app/static: HTML + CSS + vanilla JS, Chart.js from a CDN)
+Browser (app/static: index.html, styles.css, js/*.js, example-analysis.json)
    │  JSON over HTTP
 FastAPI app (app/main.py, app/routes.py)
    ├── analysis.py     data-quality rules and response assembly for /analyze
@@ -71,26 +77,49 @@ Settings are read from environment variables. `.env.example` documents them, but
 export DATABASE_URL=sqlite:///./portfolio.db   # default
 export CACHE_TTL_HOURS=24                      # default
 export PROVIDER_TIMEOUT_SECONDS=10             # default
+export ALLOWED_ORIGINS=https://iamjeshurun.github.io  # browser origins allowed to call the API; default none
 uvicorn app.main:app
 ```
 
+`ALLOWED_ORIGINS` is only needed when the page is hosted somewhere other than the API, as on GitHub Pages.
+
+## Deployment
+
+- **API:** `render.yaml` is a Render Blueprint for a free web service that runs `uvicorn` and allows the GitHub
+  Pages origin. The free tier sleeps when idle and its disk is not persistent, so the price cache and saved
+  portfolios are reset on each restart. Yahoo Finance may also rate-limit requests from cloud servers; the page
+  reports that as an error rather than showing stale or invented numbers.
+- **Page:** `.github/workflows/pages.yml` copies `app/static` to GitHub Pages and writes the API's address
+  (the `API_URL` repository variable) into `<meta name="api-base">`.
+- **Example:** `python scripts/build_example.py` refetches prices and rewrites `app/static/example-analysis.json`
+  with the fetch time. Nothing in it is hand-written.
+
 ## Using the dashboard
+
+The page has two parts:
+
+- **The opening** replays the example portfolio's three years: growth of $1 above a baseline and its fall from the
+  running peak below it, one hairline per trading day, with the deepest drawdown marked. Move along it, or focus it
+  and use the arrow keys, to read any day.
+- **The analysis workspace** shows the summary measures with short explanations, a growth-of-$1 chart with a
+  range per calendar year and each holding, the drawdown chart, a histogram of daily returns for volatility and the
+  Sharpe ratio, and the correlation table. Every chart can be read with the pointer or the arrow keys.
+
+The results area always says what it shows: **Example data, precomputed** (with the date its prices were fetched)
+or **Live result** (with when the prices were fetched and when it was calculated). A live run never silently
+replaces the example: on any error the current results stay on screen and the error says nothing was estimated.
+The service status is shown in the top bar; **Run live analysis** is enabled only once the API answers.
+
+To run your own analysis:
 
 1. Enter one row per holding: a symbol and an **initial weight in percent**. Use **Add holding** and **×** to
    add and remove rows. There can be up to 20 holdings. The running total must reach 100%.
 2. Choose start and end dates and enter the **annual risk-free rate in percent** (for example `3` for 3%).
-3. Choose **Analyze**. **Example portfolio** fills in a working set of inputs.
-4. The results show:
-   - the effective analysis period and any data-quality warnings
-   - metric cards (percentages and Sharpe to two decimals; an em dash with a note when a metric is undefined)
-   - the growth-of-1.0 chart for the portfolio and each asset
-   - the drawdown chart
-   - a color-shaded correlation table
-5. Errors appear next to the relevant field. When the problem is with the data for one symbol (no data,
-   interior gaps, invalid prices), that symbol's row is highlighted. Changing any input (including
-   **Load** or **Example portfolio**) clears the displayed results until you analyze again, and a response
-   for inputs that changed while the request was running is discarded.
-6. **Saved portfolios**: enter a name and choose **Save current inputs**. This stores the inputs, not the
+3. Choose **Run live analysis**. The form starts with the example's inputs.
+4. Errors appear next to the relevant field. When the problem is with the data for one symbol (no data,
+   interior gaps, invalid prices), that symbol's row is highlighted. Changing any input after a live run marks
+   that result as out of date, and a response for inputs that changed while the request was running is discarded.
+5. **Saved portfolios**: enter a name and choose **Save current inputs**. This stores the inputs, not the
    results, and does not fetch prices. **Load** fills the form from a saved configuration. **Delete** asks
    for confirmation, then removes it.
 
@@ -98,7 +127,11 @@ uvicorn app.main:app
 
 ```bash
 pytest
+node --test "tests/js/*.test.mjs"
 ```
+
+The JavaScript tests cover the page's own calculations: date formatting, axis ticks, the histogram, and that daily
+returns derived from the example reproduce the API's annualized volatility and drawdown dates.
 
 The tests do not use the network. They use deterministic in-memory price fixtures, temporary SQLite databases,
 and `app.dependency_overrides` for both the provider and the database session. One test replaces
@@ -144,6 +177,8 @@ The response includes:
 - `normalized_assets`: one series per symbol
 - `correlation`: `symbols` and `matrix`; entries may be `null`
 - `warnings`
+- `prices_fetched_at`: when the oldest price series used was downloaded (UTC); cached prices can be up to
+  `CACHE_TTL_HOURS` old
 
 ```bash
 curl -s "http://127.0.0.1:8000/api/v1/prices/MSFT?start_date=2025-12-01&end_date=2025-12-31"
