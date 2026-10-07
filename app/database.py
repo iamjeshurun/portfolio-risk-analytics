@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import JSON, Date, DateTime, Float, Integer, String, UniqueConstraint, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -32,12 +32,25 @@ class Price(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime)  # naive UTC
 
 
+class PriceFetch(Base):
+    """The date range of the symbol's cached fetch, so dates without rows are known gaps."""
+
+    __tablename__ = "price_fetches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(10), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)  # naive UTC
+
+
 class Portfolio(Base):
     __tablename__ = "portfolios"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    holdings: Mapped[str] = mapped_column(Text)  # JSON list of {"symbol", "weight"}
+    holdings: Mapped[list[dict]] = mapped_column(JSON)  # [{"symbol", "weight"}, ...]
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     risk_free_rate: Mapped[float] = mapped_column(Float)
