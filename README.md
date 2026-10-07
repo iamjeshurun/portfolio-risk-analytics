@@ -346,3 +346,7 @@ Deliberate tradeoffs:
 - Rolling-window volatility and correlation charts.
 - Additional risk measures such as Sortino ratio, value at risk, and expected shortfall.
 - Updating saved portfolios in place.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
