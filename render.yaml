@@ -1,0 +1,13 @@
+# Render Blueprint for the API. The dashboard itself is served from GitHub Pages (see .github/workflows/pages.yml),
+# and the API also serves it at / for local use. Render reads the Python version from .python-version.
+services:
+  - type: web
+    name: portfolio-risk-analytics
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://iamjeshurun.github.io

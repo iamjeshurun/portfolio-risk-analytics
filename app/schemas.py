@@ -175,6 +175,11 @@ class AnalysisResponse(BaseModel):
     normalized_assets: AssetSeries
     correlation: Correlation
     warnings: list[str]
+    prices_fetched_at: datetime | None = Field(
+        default=None,
+        description="When the oldest of the price series used was downloaded from the provider (UTC). "
+        "Cached prices can be up to CACHE_TTL_HOURS old.",
+    )
 
 
 class PricePoint(BaseModel):

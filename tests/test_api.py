@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -101,6 +101,21 @@ def test_successful_analysis(client):
     assert body["correlation"]["symbols"] == ["AAA", "BBB"]
     assert body["correlation"]["matrix"][0][1] == pytest.approx(1.0)
     assert body["warnings"] == []
+    fetched_at = datetime.fromisoformat(body["prices_fetched_at"])
+    assert fetched_at.tzinfo is not None
+    assert abs(datetime.now(UTC) - fetched_at) < timedelta(minutes=1)
+
+
+def test_dashboard_and_example_are_served(client):
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'name="api-base"' in page.text
+    for path in ("/static/js/app.js", "/static/styles.css"):
+        assert client.get(path).status_code == 200
+    example = client.get("/static/example-analysis.json").json()
+    assert example["kind"] == "example"
+    assert example["source"]["provider"] == "yfinance"
+    assert len(example["analysis"]["portfolio_value"]["values"]) == example["analysis"]["observations"] + 1
 
 
 def test_provider_failure_hides_internal_details(client):

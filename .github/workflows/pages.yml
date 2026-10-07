@@ -1,0 +1,43 @@
+name: Deploy the dashboard to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/static/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      # Set the repository variable API_URL to the hosted API (for example the Render service URL).
+      API_URL: ${{ vars.API_URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the static site
+        run: |
+          test -n "$API_URL" || { echo "Set the API_URL repository variable to the hosted API's URL."; exit 1; }
+          mkdir -p site
+          cp -R app/static site/static
+          mv site/static/index.html site/index.html
+          sed -i "s#<meta name=\"api-base\" content=\"\">#<meta name=\"api-base\" content=\"${API_URL}\">#" site/index.html
+          grep -q "content=\"${API_URL}\"" site/index.html
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5
