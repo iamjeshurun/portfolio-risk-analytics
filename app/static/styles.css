@@ -163,7 +163,7 @@ input[type="number"] { -moz-appearance: textfield; }
 input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .suffix-input { position: relative; display: block; }
 .suffix-input input { padding-right: 28px; text-align: right; }
-.suffix-input > span { position: absolute; right: 10px; top: 11px; color: var(--mute); pointer-events: none; }
+.suffix-input > span { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 16px; line-height: 1; color: var(--mute); pointer-events: none; }
 .holdings-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .weight-total { font-size: 14px; color: var(--mute); text-align: right; }
 .weight-total.off { color: var(--risk-soft); }
