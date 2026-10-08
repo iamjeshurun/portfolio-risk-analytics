@@ -90,14 +90,14 @@
         </section>
 
         <details class="panel saved" id="saved">
-          <summary class="display">Saved portfolios</summary>
-          <p class="muted small" id="saved-intro">Save the inputs above under a name to load them later. Results are not saved.</p>
+          <summary class="display">Saved portfolios<span id="saved-summary-count" class="muted"></span></summary>
+          <p class="small" id="saved-intro">Saved in this browser only. Other visitors cannot see them, nothing is sent to the server, and they are lost if you clear this site's data or use a private window. Inputs are saved, not results.</p>
           <form id="save-form" class="save-form" novalidate>
             <label class="field">Name
               <input type="text" id="portfolio-name" maxlength="100" placeholder="For example, Big Tech" required>
               <span class="field-error" data-error-for="name"></span>
             </label>
-            <button type="submit" class="btn btn-quiet btn-small" id="save-button">Save current inputs</button>
+            <button type="submit" class="btn btn-quiet btn-small" id="save-button">Save in this browser</button>
           </form>
           <p class="small status" id="saved-status" role="status"></p>
           <ul class="saved-list" id="saved-list"></ul>

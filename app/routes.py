@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analysis import analyze_prices
+from app import config
 from app.database import Portfolio, PriceFetch, get_db
 from app.errors import AppError, validation_error
 from app.market_data import PRICE_SOURCE, PriceFetcher, get_price_fetcher, get_prices
@@ -84,6 +85,19 @@ def analyze(
     return result
 
 
+def require_saved_portfolios() -> None:
+    if not config.SAVED_PORTFOLIOS_ENABLED:
+        raise AppError(
+            "NOT_ENABLED",
+            "Saved portfolios are turned off on this server so that visitors never share them. "
+            "The dashboard saves portfolios in your browser instead.",
+            404,
+        )
+
+
+saved = [Depends(require_saved_portfolios)]
+
+
 def portfolio_out(portfolio: Portfolio) -> PortfolioOut:
     return PortfolioOut(
         id=portfolio.id,
@@ -103,7 +117,7 @@ def find_portfolio(db: Session, portfolio_id: int) -> Portfolio:
     return portfolio
 
 
-@router.post("/portfolios", response_model=PortfolioOut, status_code=201, responses={422: ERRORS[422]})
+@router.post("/portfolios", response_model=PortfolioOut, status_code=201, responses={422: ERRORS[422]}, dependencies=saved)
 def create_portfolio(request: PortfolioCreate, db: Session = Depends(get_db)) -> PortfolioOut:
     """Save analysis inputs (not results). Does not fetch market data."""
     portfolio = Portfolio(
@@ -120,18 +134,18 @@ def create_portfolio(request: PortfolioCreate, db: Session = Depends(get_db)) ->
     return portfolio_out(portfolio)
 
 
-@router.get("/portfolios", response_model=list[PortfolioOut])
+@router.get("/portfolios", response_model=list[PortfolioOut], dependencies=saved)
 def list_portfolios(db: Session = Depends(get_db)) -> list[PortfolioOut]:
     portfolios = db.scalars(select(Portfolio).order_by(Portfolio.created_at.desc(), Portfolio.id.desc()))
     return [portfolio_out(portfolio) for portfolio in portfolios]
 
 
-@router.get("/portfolios/{portfolio_id}", response_model=PortfolioOut, responses={404: {"model": ErrorResponse}, 422: ERRORS[422]})
+@router.get("/portfolios/{portfolio_id}", response_model=PortfolioOut, responses={404: {"model": ErrorResponse}, 422: ERRORS[422]}, dependencies=saved)
 def get_portfolio(portfolio_id: int, db: Session = Depends(get_db)) -> PortfolioOut:
     return portfolio_out(find_portfolio(db, portfolio_id))
 
 
-@router.delete("/portfolios/{portfolio_id}", status_code=204, responses={404: {"model": ErrorResponse}, 422: ERRORS[422]})
+@router.delete("/portfolios/{portfolio_id}", status_code=204, responses={404: {"model": ErrorResponse}, 422: ERRORS[422]}, dependencies=saved)
 def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)) -> Response:
     db.delete(find_portfolio(db, portfolio_id))
     db.commit()

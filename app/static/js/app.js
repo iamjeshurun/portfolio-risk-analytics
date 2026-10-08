@@ -2,6 +2,7 @@ import { api, watchService } from "./api.js";
 import { el, returnsHistogram, timeChart } from "./charts.js";
 import { dollars, holdingsSummary, longDate, percent, percentInput, ratio, timeStamp, toDecimal } from "./format.js";
 import { renderHero } from "./hero.js";
+import { deletePortfolio, openStore, readSaved, savePortfolio } from "./saved.js";
 import { dailyReturns, dateRanges, deepestFall, extent, niceTicks, rebase, sampleStdev } from "./series.js";
 
 const MAX_HOLDINGS = 20;
@@ -173,7 +174,6 @@ const SERVICE_TEXT = {
 };
 
 function setService(next) {
-  const wasReady = state.service === "ready";
   state.service = next;
   const [long, short, note] = SERVICE_TEXT[next];
   $("#service-long").textContent = long;
@@ -183,9 +183,6 @@ function setService(next) {
   $("#run-wake").hidden = next !== "waking" && next !== "checking";
   $("#retry-service").hidden = next !== "unavailable";
   updateRunButton();
-  $("#save-button").disabled = next !== "ready";
-  if (next === "ready" && !wasReady) refreshSaved();
-  if (next !== "ready") $("#saved-intro").textContent = "Saved portfolios are stored by the live service, so they appear once it is ready.";
 }
 
 function updateRunButton() {
@@ -510,7 +507,9 @@ function renderResults() {
   animateMetricsWhenVisible();
 }
 
-// ---------- Saved portfolios ----------
+// ---------- Saved portfolios (this browser only) ----------
+
+const store = openStore();
 
 function setSavedStatus(message, isError = false) {
   const status = $("#saved-status");
@@ -518,69 +517,58 @@ function setSavedStatus(message, isError = false) {
   status.classList.toggle("error-text", isError);
 }
 
-async function refreshSaved() {
-  $("#saved-intro").textContent = "Save the inputs above under a name to load them later. Results are not saved.";
-  try {
-    const portfolios = await api("/api/v1/portfolios");
-    $("#saved-list").replaceChildren(
-      ...(portfolios.length ? portfolios.map(savedItem) : [el("li", { class: "muted small", text: "No saved portfolios yet." })])
-    );
-  } catch (error) {
-    setSavedStatus(`Could not load saved portfolios. ${error.message}`, true);
+function renderSaved() {
+  if (!store) {
+    $("#saved-intro").textContent = "This browser is blocking site storage (for example in a private window), so saving is turned off here. Nothing is ever saved on the server.";
+    $("#save-form").hidden = true;
+    return;
   }
+  const items = readSaved(store);
+  $("#saved-summary-count").textContent = items.length ? ` (${items.length})` : "";
+  $("#saved-list").replaceChildren(
+    ...(items.length ? items.map(savedItem) : [el("li", { class: "muted small", text: "Nothing saved in this browser yet." })])
+  );
 }
 
 function savedItem(portfolio) {
+  const symbols = portfolio.holdings.map((h) => h.symbol).filter(Boolean).join(", ") || "No symbols";
+  const span = portfolio.start_date && portfolio.end_date ? ` ${longDate(portfolio.start_date)} to ${longDate(portfolio.end_date)}.` : "";
   return el("li", {}, [
-    el("div", {}, [
-      el("p", { class: "saved-name", text: portfolio.name }),
-      el("p", { class: "muted small", text: `${portfolio.holdings.map((h) => h.symbol).join(", ")}. ${longDate(portfolio.start_date)} to ${longDate(portfolio.end_date)}.` }),
-    ]),
-    el("button", { type: "button", class: "btn btn-quiet btn-small", text: "Load", "aria-label": `Load ${portfolio.name}`, onclick: () => loadSaved(portfolio.id) }),
+    el("div", {}, [el("p", { class: "saved-name", text: portfolio.name }), el("p", { class: "muted small", text: `${symbols}.${span}` })]),
+    el("button", { type: "button", class: "btn btn-quiet btn-small", text: "Load", "aria-label": `Load ${portfolio.name}`, onclick: () => loadSaved(portfolio) }),
     el("button", { type: "button", class: "btn btn-quiet btn-small danger", text: "Delete", "aria-label": `Delete ${portfolio.name}`, onclick: () => deleteSaved(portfolio) }),
   ]);
 }
 
-async function saveCurrent(event) {
+function saveCurrent(event) {
   event.preventDefault();
-  if (state.service !== "ready") return;
-  clearErrors();
-  const button = $("#save-button");
-  button.disabled = true;
+  if (!store) return;
+  const nameError = document.querySelector('[data-error-for="name"]');
+  nameError.textContent = "";
+  $("#portfolio-name").classList.remove("invalid");
   try {
-    const saved = await api("/api/v1/portfolios", { method: "POST", body: { name: $("#portfolio-name").value, ...readForm() } });
+    const { entry, replaced } = savePortfolio(store, $("#portfolio-name").value, readForm());
     $("#portfolio-name").value = "";
-    setSavedStatus(`Saved “${saved.name}”.`);
-    await refreshSaved();
+    setSavedStatus(`${replaced ? "Updated" : "Saved"} \u201c${entry.name}\u201d in this browser.`);
+    renderSaved();
   } catch (error) {
-    showRequestError(error);
-    setSavedStatus(error.code === "VALIDATION_ERROR" ? "Not saved. Correct the highlighted fields." : error.message, true);
-  } finally {
-    button.disabled = state.service !== "ready";
+    nameError.textContent = error.message || "Could not save in this browser.";
+    markInvalid($("#portfolio-name"));
+    $("#portfolio-name").focus();
   }
 }
 
-async function loadSaved(id) {
-  try {
-    const portfolio = await api(`/api/v1/portfolios/${id}`);
-    fillForm(portfolio);
-    inputsChanged();
-    setSavedStatus(`Loaded “${portfolio.name}”. Run live analysis to see its results.`);
-  } catch (error) {
-    setSavedStatus(error.message, true);
-    await refreshSaved();
-  }
+function loadSaved(portfolio) {
+  fillForm(portfolio);
+  inputsChanged();
+  setSavedStatus(`Loaded \u201c${portfolio.name}\u201d. Run live analysis to see its results.`);
 }
 
-async function deleteSaved(portfolio) {
-  if (!window.confirm(`Delete the saved portfolio “${portfolio.name}”?`)) return;
-  try {
-    await api(`/api/v1/portfolios/${portfolio.id}`, { method: "DELETE" });
-    setSavedStatus(`Deleted “${portfolio.name}”.`);
-  } catch (error) {
-    setSavedStatus(error.message, true);
-  }
-  await refreshSaved();
+function deleteSaved(portfolio) {
+  if (!window.confirm(`Delete \u201c${portfolio.name}\u201d from this browser?`)) return;
+  deletePortfolio(store, portfolio.id);
+  setSavedStatus(`Deleted \u201c${portfolio.name}\u201d.`);
+  renderSaved();
 }
 
 // ---------- Start ----------
@@ -611,6 +599,9 @@ async function start() {
     inputsChanged();
   });
   $("#save-form").addEventListener("submit", saveCurrent);
+  renderSaved();
+  // Another tab of this site saving or deleting updates this list too.
+  window.addEventListener("storage", () => store && renderSaved());
   const today = new Date().toISOString().slice(0, 10);
   $("#start-date").max = today;
   $("#end-date").max = today;

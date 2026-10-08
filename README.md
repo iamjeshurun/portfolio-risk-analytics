@@ -13,7 +13,7 @@ a date range and an annual risk-free rate. The app retrieves daily adjusted clos
 The dashboard opens on a precomputed, clearly labelled example (40% AAPL, 35% MSFT, 25% GOOG, 2023 to 2025),
 so it is useful before the free-tier API wakes up. Edit the holdings and run a live analysis once the service is
 ready; live results replace the example and are labelled with when their prices were fetched. You can also save,
-list, load and delete portfolio configurations.
+load and delete portfolio configurations; the dashboard keeps them in your own browser.
 
 **Live demo:** <https://iamjeshurun.github.io/portfolio-risk-analytics/> (static page on GitHub Pages; the API runs
 on Render's free tier and can take up to a minute to wake).
@@ -78,16 +78,20 @@ export DATABASE_URL=sqlite:///./portfolio.db   # default
 export CACHE_TTL_HOURS=24                      # default
 export PROVIDER_TIMEOUT_SECONDS=10             # default
 export ALLOWED_ORIGINS=https://iamjeshurun.github.io  # browser origins allowed to call the API; default none
+export SAVED_PORTFOLIOS_ENABLED=true           # default; false turns off the /portfolios endpoints
 uvicorn app.main:app
 ```
 
 `ALLOWED_ORIGINS` is only needed when the page is hosted somewhere other than the API, as on GitHub Pages.
+`SAVED_PORTFOLIOS_ENABLED=false` makes the `/portfolios` endpoints answer `404 NOT_ENABLED`. The public deployment
+uses it, because those endpoints keep one shared list in the server's database that every caller could read and
+delete. The dashboard does not use them.
 
 ## Deployment
 
 - **API:** `render.yaml` is a Render Blueprint for a free web service that runs `uvicorn` and allows the GitHub
-  Pages origin. The free tier sleeps when idle and its disk is not persistent, so the price cache and saved
-  portfolios are reset on each restart. Yahoo Finance may also rate-limit requests from cloud servers; the page
+  Pages origin and turns off server-side saved portfolios. The free tier sleeps when idle and its disk is not
+  persistent, so the price cache is reset on each restart. Yahoo Finance may also rate-limit requests from cloud servers; the page
   reports that as an error rather than showing stale or invented numbers.
 - **Page:** `.github/workflows/pages.yml` copies `app/static` to GitHub Pages and writes the API's address
   (the `API_URL` repository variable) into `<meta name="api-base">`.
@@ -119,9 +123,11 @@ To run your own analysis:
 4. Errors appear next to the relevant field. When the problem is with the data for one symbol (no data,
    interior gaps, invalid prices), that symbol's row is highlighted. Changing any input after a live run marks
    that result as out of date, and a response for inputs that changed while the request was running is discarded.
-5. **Saved portfolios**: enter a name and choose **Save current inputs**. This stores the inputs, not the
-   results, and does not fetch prices. **Load** fills the form from a saved configuration. **Delete** asks
-   for confirmation, then removes it.
+5. **Saved portfolios**: enter a name and choose **Save in this browser**. The dashboard stores the inputs (not
+   the results) in the browser's `localStorage`, so they are private to that browser: other visitors never see
+   them, nothing is sent to the server, and they disappear if site data is cleared or in a private window. Saving
+   under an existing name replaces it, and a browser holds at most 50. **Load** fills the form; **Delete** asks
+   for confirmation. Saving works even while the API is asleep.
 
 ## Tests
 
@@ -144,7 +150,7 @@ and `app.dependency_overrides` for both the provider and the database session. O
 | GET | `/api/v1/health` | Liveness check |
 | GET | `/api/v1/prices/{symbol}?start_date=&end_date=` | Observed adjusted closes. `end_date` defaults to today; `start_date` defaults to 365 days before it |
 | POST | `/api/v1/analyze` | Portfolio metrics and chart series |
-| POST | `/api/v1/portfolios` | Save a configuration (201) |
+| POST | `/api/v1/portfolios` | Save a configuration (201). The four `/portfolios` endpoints share one list for all callers and answer `404 NOT_ENABLED` when `SAVED_PORTFOLIOS_ENABLED=false` |
 | GET | `/api/v1/portfolios` | List saved configurations, newest first |
 | GET | `/api/v1/portfolios/{id}` | Load one configuration |
 | DELETE | `/api/v1/portfolios/{id}` | Delete one configuration (204) |
@@ -229,6 +235,7 @@ A validation failure lists each field location with a readable message:
 | `INSUFFICIENT_DATA` | 422 | Fewer than 20 return observations (`details.observations`) |
 | `PROVIDER_ERROR` | 502 | Identifiable upstream failure, invalid observed prices, or an unusable response |
 | `NOT_FOUND` | 404 | Unknown saved portfolio |
+| `NOT_ENABLED` | 404 | Server-side saved portfolios are turned off (`SAVED_PORTFOLIOS_ENABLED=false`) |
 | `INTERNAL_ERROR` | 500 | Unexpected failure. The server logs it; the client never sees tracebacks or raw provider/SQL messages |
 
 ## Input rules
