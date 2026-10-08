@@ -11,3 +11,6 @@ services:
     envVars:
       - key: ALLOWED_ORIGINS
         value: https://iamjeshurun.github.io
+      # Public demo: never keep saved portfolios on the server, where all visitors would share them.
+      - key: SAVED_PORTFOLIOS_ENABLED
+        value: "false"

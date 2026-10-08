@@ -1,9 +1,10 @@
-// Run with: node --test tests/js
+// Run with: node --test "tests/js/*.test.mjs"
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { dollars, longDate, percent, percentInput, toDecimal } from "../../app/static/js/format.js";
+import { deletePortfolio, MAX_SAVED, openStore, readSaved, savePortfolio } from "../../app/static/js/saved.js";
 import { dailyReturns, dateRanges, deepestFall, histogram, niceTicks, rebase, sampleStdev } from "../../app/static/js/series.js";
 
 const example = JSON.parse(readFileSync(new URL("../../app/static/example-analysis.json", import.meta.url)));
@@ -62,4 +63,50 @@ test("the histogram counts every return once", () => {
   const { bins } = histogram(values);
   assert.equal(bins.reduce((sum, b) => sum + b.count, 0), values.length);
   assert.ok(bins.length <= 48);
+});
+
+function memoryStorage() {
+  const data = new Map();
+  return {
+    getItem: (key) => (data.has(key) ? data.get(key) : null),
+    setItem: (key, value) => data.set(key, String(value)),
+    removeItem: (key) => data.delete(key),
+  };
+}
+
+const INPUTS = { holdings: [{ symbol: " aapl ", weight: 0.6 }, { symbol: "MSFT", weight: 0.4 }], start_date: "2024-01-01", end_date: "2025-12-31", risk_free_rate: 0.04 };
+
+test("saved portfolios stay in the given browser storage", () => {
+  const storage = memoryStorage();
+  assert.ok(openStore(storage));
+  const { entry, replaced } = savePortfolio(storage, "  Big Tech ", INPUTS, new Date("2026-10-08T12:00:00Z"));
+  assert.equal(replaced, false);
+  assert.equal(entry.name, "Big Tech");
+  assert.deepEqual(entry.holdings, [{ symbol: "AAPL", weight: 0.6 }, { symbol: "MSFT", weight: 0.4 }]);
+  assert.equal(readSaved(storage).length, 1);
+
+  const again = savePortfolio(storage, "big tech", { ...INPUTS, risk_free_rate: 0.03 });
+  assert.equal(again.replaced, true);
+  assert.equal(readSaved(storage).length, 1);
+  assert.equal(readSaved(storage)[0].risk_free_rate, 0.03);
+
+  deletePortfolio(storage, again.entry.id);
+  assert.deepEqual(readSaved(storage), []);
+  assert.deepEqual(readSaved(memoryStorage()), [], "a different browser starts empty");
+});
+
+test("saving rejects bad names and caps the list", () => {
+  const storage = memoryStorage();
+  assert.throws(() => savePortfolio(storage, "   ", INPUTS), /Enter a name/);
+  assert.throws(() => savePortfolio(storage, "x".repeat(101), INPUTS), /100 characters/);
+  for (let i = 0; i < MAX_SAVED; i += 1) savePortfolio(storage, `P${i}`, INPUTS);
+  assert.throws(() => savePortfolio(storage, "one more", INPUTS), /Delete one first/);
+});
+
+test("blocked or corrupt storage is handled", () => {
+  const blocked = { setItem() { throw new Error("SecurityError"); }, getItem() { return null; }, removeItem() {} };
+  assert.equal(openStore(blocked), null);
+  const corrupt = memoryStorage();
+  corrupt.setItem("portfolio-risk-analytics:saved-portfolios:v1", "{not json");
+  assert.deepEqual(readSaved(corrupt), []);
 });

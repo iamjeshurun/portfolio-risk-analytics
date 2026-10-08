@@ -163,6 +163,21 @@ def test_saved_portfolio_lifecycle_does_not_fetch_prices(client):
     assert provider.calls == 0
 
 
+def test_saved_portfolios_can_be_turned_off(client, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "SAVED_PORTFOLIOS_ENABLED", False)
+    responses = [
+        client.post("/api/v1/portfolios", json={**VALID_REQUEST, "name": "Core"}),
+        client.get("/api/v1/portfolios"),
+        client.get("/api/v1/portfolios/1"),
+        client.delete("/api/v1/portfolios/1"),
+    ]
+    for response in responses:
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NOT_ENABLED"
+
+
 def test_yfinance_response_is_normalized(monkeypatch):
     from app import market_data
 
